@@ -1,0 +1,4 @@
+edition = "2021"
+imports_granularity = "Crate"
+newline_style = "Unix"
+wrap_comments = true
