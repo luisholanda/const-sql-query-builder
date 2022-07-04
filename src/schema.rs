@@ -32,6 +32,10 @@ pub struct Table {
     pub all_columns: &'static [Column],
 }
 
+pub const fn table_columns(table: Table) -> &'static [Column] {
+    table.all_columns
+}
+
 impl const SqlExpression for Table {
     fn write_sql_expression(&self, sql: &mut Sql) {
         self.ident.write_sql_expression(sql);

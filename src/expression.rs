@@ -1,10 +1,11 @@
+use std::mem::{ManuallyDrop, MaybeUninit};
+
 use crate::const_string::ConstString;
 
 pub trait SqlExpression {
     fn write_sql_expression(&self, sql: &mut Sql);
 }
 
-#[derive(Debug, Clone, Copy)]
 pub struct Sql {
     query: ConstString,
     bindings: u8,
@@ -43,9 +44,14 @@ impl Sql {
     }
 
     pub const fn push_binding(&mut self, binding: &str) -> &mut Sql {
-        self.concat(binding);
+        self.push_str(binding);
         self.bindings += 1;
         self
+    }
+
+    pub const fn push_sql(&mut self, other: &Sql) {
+        self.query.push_str(other.query.as_str());
+        self.bindings += other.bindings;
     }
 
     pub const fn bindings(&self) -> u8 {
@@ -54,6 +60,23 @@ impl Sql {
 
     pub const fn into_str(self) -> &'static str {
         self.query.leak()
+    }
+
+    pub const fn default_array<const N: usize>() -> [Self; N] {
+        let mut uninit_array = <MaybeUninit<Sql>>::uninit_array::<N>();
+
+        let mut idx = 0;
+        while idx < N {
+            uninit_array[idx].write(Sql::default());
+            idx += 1;
+        }
+
+        let uninit_array = ManuallyDrop::new(uninit_array);
+
+        unsafe {
+            std::intrinsics::assert_inhabited::<[Sql; N]>();
+            (&uninit_array as *const _ as *const [Sql; N]).read()
+        }
     }
 }
 

@@ -20,7 +20,13 @@
     const_precise_live_drops,
     const_swap,
     generic_const_exprs,
-    marker_trait_attr
+    marker_trait_attr,
+    macro_metavar_expr,
+    maybe_uninit_uninit_array,
+    const_maybe_uninit_uninit_array,
+    const_maybe_uninit_write,
+    const_ptr_read,
+    const_refs_to_cell
 )]
 
 pub(crate) mod const_string;

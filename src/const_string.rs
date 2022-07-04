@@ -51,6 +51,10 @@ impl ConstString {
         unsafe { std::str::from_utf8_unchecked(slice) }
     }
 
+    pub(crate) const fn as_str(&self) -> &'static str {
+        unsafe { std::str::from_utf8_unchecked(&*self.buf.as_ptr()) }
+    }
+
     const fn end(&mut self) -> *mut u8 {
         unsafe { self.buf.as_mut_ptr().add(self.size) }
     }
