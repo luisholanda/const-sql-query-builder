@@ -61,18 +61,11 @@ where
 
 macro_rules! impl_join {
     ($method: ident, $style: ident) => {
-        pub const fn $method<Rhs>(
-            self,
-            rhs: Rhs,
-        ) -> Select<Join<Source, Rhs, { JoinStyle::$style }>, N> {
-            Select {
-                from: Join {
-                    left: self.from,
-                    right: rhs,
-                },
-                projections: self.projections,
-                limit: self.limit,
-                offset: self.offset,
+        pub const fn $method<Rhs>(self, rhs: Rhs) -> IncompleteSelectJoin<Source, Rhs, N> {
+            IncompleteSelectJoin {
+                select: self,
+                right: rhs,
+                style: JoinStyle::$style
             }
         }
     };
@@ -155,25 +148,78 @@ pub enum JoinStyle {
     Cross,
 }
 
-pub struct Join<Lhs, Rhs, const STYLE: JoinStyle> {
+pub struct Join<Lhs, Rhs, On> {
     left: Lhs,
     right: Rhs,
+    style: JoinStyle,
+    on: JoinOn<On>,
 }
 
-impl<Lhs, Rhs, const STYLE: JoinStyle> const SqlExpression for Join<Lhs, Rhs, STYLE>
+pub enum JoinOn<On> {
+    Explicit(On),
+    Using(On),
+    Natural,
+}
+
+impl<Lhs, Rhs, On> const SqlExpression for Join<Lhs, Rhs, On>
 where
     Lhs: ~const SqlExpression,
     Rhs: ~const SqlExpression,
+    On: ~const SqlExpression,
 {
     fn write_sql_expression(&self, sql: &mut Sql) {
         self.left.write_sql_expression(sql);
 
-        match STYLE {
+        if matches!(self.on, JoinOn::Natural) {
+            sql.push_str(" NATURAL");
+        }
+
+        match self.style {
             JoinStyle::Inner => sql.push_str(" INNER JOIN "),
             JoinStyle::Left => sql.push_str(" LEFT OUTER JOIN "),
             JoinStyle::Cross => sql.push_str(" CROSS JOIN "),
         };
 
         self.right.write_sql_expression(sql);
+
+        match &self.on {
+            JoinOn::Explicit(on) => on.write_sql_expression(sql.push_str(" ON ")),
+            JoinOn::Using(columns) => columns.write_sql_expression(sql.push_str(" USING ")),
+            JoinOn::Natural => {},
+        }
+    }
+}
+
+pub struct IncompleteSelectJoin<Lhs, Rhs, const N: usize> {
+    select: Select<Lhs, N>,
+    right: Rhs,
+    style: JoinStyle,
+}
+
+impl<Lhs, Rhs, const N: usize> IncompleteSelectJoin<Lhs, Rhs, N> {
+    pub fn on<On>(self, on: On) -> Select<Join<Lhs, Rhs, On>, N> {
+        self.construct(JoinOn::Explicit(on))
+    }
+
+    pub fn using<On>(self, columns: On) -> Select<Join<Lhs, Rhs, On>, N> {
+        self.construct(JoinOn::Using(columns))
+    }
+
+    pub fn natural(self) -> Select<Join<Lhs, Rhs, ()>, N> {
+        self.construct(JoinOn::Natural)
+    }
+
+    fn construct<On>(self, join_on: JoinOn<On>) -> Select<Join<Lhs, Rhs, On>, N> {
+        Select {
+            from: Join {
+                left: self.select.from,
+                right: self.right,
+                style: self.style,
+                on: join_on,
+            },
+            projections: self.select.projections,
+            offset: self.select.offset,
+            limit: self.select.limit
+        }
     }
 }
