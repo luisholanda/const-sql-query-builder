@@ -54,11 +54,7 @@ impl ConstString {
         unsafe { std::str::from_utf8_unchecked(self.buf.as_ref()) }
     }
 
-    const fn end(&mut self) -> *mut u8 {
-        unsafe { self.buf.as_mut_ptr().add(self.size) }
-    }
-
-    const fn reserve(&mut self, additional: usize) {
+    pub(crate) const fn reserve(&mut self, additional: usize) {
         let next_cap = (self.size + additional).next_power_of_two();
         if self.cap >= next_cap {
             return;
@@ -87,6 +83,10 @@ impl ConstString {
 
             self.cap = next_cap;
         }
+    }
+
+    const fn end(&mut self) -> *mut u8 {
+        unsafe { self.buf.as_mut_ptr().add(self.size) }
     }
 
     const fn shrink_to_size(&mut self) {

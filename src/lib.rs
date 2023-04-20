@@ -36,6 +36,7 @@
 )]
 
 pub(crate) mod const_string;
+pub(crate) mod fmt;
 pub mod expression;
 pub mod query;
 pub mod schema;

@@ -32,6 +32,11 @@ impl Sql {
         self
     }
 
+    pub const fn push_u64(&mut self, num: u64) -> &mut Sql {
+        crate::fmt::fmt_u64(&mut self.query, num);
+        self
+    }
+
     pub const fn spacing(&mut self) -> &mut Sql {
         self.push(b' ')
     }

@@ -23,8 +23,6 @@ pub const fn from<const TABLE: Table>() -> Select<Table, { table_columns(TABLE).
 
 pub struct Select<Source, const N: usize> {
     from: Source,
-    // TODO: this should be moved to the type level, so that we don't need to concat multiple Sql
-    // instances and have a `N` const parameter.
     projections: [Sql; N],
     limit: Option<u64>,
     offset: Option<u64>,
@@ -51,7 +49,13 @@ where
         sql.push_str(" FROM ");
         self.from.write_sql_expression(sql);
 
-        // TODO: find a way to write u64 as string in a const context.
+        if let Some(offset) = self.offset {
+            sql.push_str(" OFFSET ").push_u64(offset);
+        }
+
+        if let Some(limit) = self.limit {
+            sql.push_str(" LIMIT ").push_u64(limit);
+        }
     }
 }
 
