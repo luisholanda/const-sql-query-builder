@@ -37,16 +37,7 @@ where
     fn write_sql_expression(&self, sql: &mut Sql) {
         sql.push_str("SELECT ");
 
-        let mut projs = &self.projections as &[Sql];
-        while let Some((cur, rest)) = projs.split_first() {
-            sql.push_sql(cur);
-
-            if rest.is_empty() {
-                sql.comma();
-            }
-
-            projs = rest;
-        }
+        self.projections.write_sql_expression(sql);
 
         sql.push_str(" FROM ");
         self.from.write_sql_expression(sql);

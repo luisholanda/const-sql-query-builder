@@ -7,6 +7,29 @@ pub trait SqlExpression {
     fn write_sql_expression(&self, sql: &mut Sql);
 }
 
+impl<const N: usize> const SqlExpression for [Sql; N] {
+    #[inline(always)]
+    fn write_sql_expression(&self, sql: &mut Sql) {
+        (self as &[Sql]).write_sql_expression(sql)
+    }
+}
+
+impl const SqlExpression for &[Sql] {
+    fn write_sql_expression(&self, sql: &mut Sql) {
+        let mut projs = *self;
+
+        while let Some((cur, rest)) = projs.split_first() {
+            sql.push_sql(cur);
+
+            if rest.is_empty() {
+                sql.comma();
+            }
+
+            projs = rest;
+        }
+    }
+}
+
 pub struct Sql {
     query: ConstString,
     bindings: u8,
