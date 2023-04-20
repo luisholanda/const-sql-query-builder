@@ -7,19 +7,26 @@ pub trait SqlExpression {
     fn write_sql_expression(&self, sql: &mut Sql);
 }
 
-impl<const N: usize> const SqlExpression for [Sql; N] {
+impl const SqlExpression for Sql {
     #[inline(always)]
     fn write_sql_expression(&self, sql: &mut Sql) {
-        (self as &[Sql]).write_sql_expression(sql)
+        sql.push_str(self.query.as_str());
     }
 }
 
-impl const SqlExpression for &[Sql] {
+impl<S: ~const SqlExpression, const N: usize> const SqlExpression for [S; N] {
+    #[inline(always)]
+    fn write_sql_expression(&self, sql: &mut Sql) {
+        (self as &[S]).write_sql_expression(sql)
+    }
+}
+
+impl<S: ~const SqlExpression> const SqlExpression for &[S] {
     fn write_sql_expression(&self, sql: &mut Sql) {
         let mut projs = *self;
 
         while let Some((cur, rest)) = projs.split_first() {
-            sql.push_sql(cur);
+            cur.write_sql_expression(sql);
 
             if rest.is_empty() {
                 sql.comma();
@@ -29,6 +36,41 @@ impl const SqlExpression for &[Sql] {
         }
     }
 }
+
+macro_rules! impl_sql_expression_tuples {
+    (( $($x: ident,)+ )) => {
+        impl< $($x),+ > const SqlExpression for ($($x,)+)
+        where
+            $($x: ~const SqlExpression,)+
+        {
+            fn write_sql_expression(&self, sql: &mut Sql) {
+                let total = ${count(x)};
+
+                $(
+                    let val: &$x = &self.${index()};
+                    val.write_sql_expression(sql);
+                    
+                    if ${index()} != total - 1 {
+                        sql.comma();
+                    }
+                )+
+            }
+        }
+    };
+}
+
+impl_sql_expression_tuples!((T1,));
+impl_sql_expression_tuples!((T1, T2,));
+impl_sql_expression_tuples!((T1, T2, T3,));
+impl_sql_expression_tuples!((T1, T2, T3, T4,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7, T8,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11,));
+impl_sql_expression_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12,));
 
 pub struct Sql {
     query: ConstString,

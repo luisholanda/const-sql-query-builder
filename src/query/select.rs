@@ -2,37 +2,29 @@ use std::marker::Destruct;
 
 use crate::{
     expression::{Sql, SqlExpression},
-    schema::{table_columns, Table},
+    schema::{table_columns, Table, Column},
 };
 
-pub const fn from<const TABLE: Table>() -> Select<Table, { table_columns(TABLE).len() }> {
-    let mut projections = Sql::default_array::<{ table_columns(TABLE).len() }>();
-
-    let columns = table_columns(TABLE);
-    let mut idx = 0;
-    while idx < columns.len() {
-        columns[idx].write_sql_expression(&mut projections[idx]);
-        idx += 1;
-    }
-
+pub const fn from(table: Table) -> Select<Table, &'static [Column]> {
     Select {
-        from: TABLE,
-        projections,
+        from: table,
+        projections: table_columns(table),
         limit: None,
         offset: None,
     }
 }
 
-pub struct Select<Source, const N: usize> {
+pub struct Select<Source, Proj> {
     from: Source,
-    projections: [Sql; N],
+    projections: Proj,
     limit: Option<u64>,
     offset: Option<u64>,
 }
 
-impl<Source, const N: usize> const SqlExpression for Select<Source, N>
+impl<Source, Proj> const SqlExpression for Select<Source, Proj>
 where
     Source: ~const SqlExpression,
+    Proj: ~const SqlExpression,
 {
     fn write_sql_expression(&self, sql: &mut Sql) {
         sql.push_str("SELECT ");
@@ -54,7 +46,7 @@ where
 
 macro_rules! impl_join {
     ($method: ident, $style: ident) => {
-        pub const fn $method<Rhs>(self, rhs: Rhs) -> IncompleteSelectJoin<Source, Rhs, N> {
+        pub const fn $method<Rhs>(self, rhs: Rhs) -> IncompleteSelectJoin<Source, Rhs, Proj> {
             IncompleteSelectJoin {
                 select: self,
                 right: rhs,
@@ -64,15 +56,14 @@ macro_rules! impl_join {
     };
 }
 
-impl<Source, const N: usize> Select<Source, N> {
-    pub const fn select<P>(self, projection: P) -> Select<Source, { P::LENGTH }>
+impl<Source, Proj> Select<Source, Proj> {
+    pub const fn select<P>(self, projections: P) -> Select<Source, P>
     where
-        P: ~const AsProjection + ~const Destruct,
-        Source: ~const Destruct,
+        Self: ~const Destruct,
     {
         Select {
             from: self.from,
-            projections: projection.as_projection(),
+            projections,
             limit: self.limit,
             offset: self.offset,
         }
@@ -92,48 +83,6 @@ impl<Source, const N: usize> Select<Source, N> {
         self
     }
 }
-
-#[const_trait]
-pub trait AsProjection {
-    const LENGTH: usize;
-
-    fn as_projection(&self) -> [Sql; Self::LENGTH];
-}
-
-macro_rules! impl_as_projection_tuples {
-    (( $($x: ident,)+ )) => {
-        impl< $($x),+ > const AsProjection for ($($x,)+)
-        where
-            $($x: ~const SqlExpression,)+
-        {
-            const LENGTH: usize = ${count(x)};
-
-            fn as_projection(&self) -> [Sql; Self::LENGTH] {
-                let mut projections = Sql::default_array::<{Self::LENGTH}>();
-
-                $(
-                let val: &$x = &self.${index()};
-                val.write_sql_expression(&mut projections[${index()}]);
-                )+
-
-                projections
-            }
-        }
-    };
-}
-
-impl_as_projection_tuples!((T1,));
-impl_as_projection_tuples!((T1, T2,));
-impl_as_projection_tuples!((T1, T2, T3,));
-impl_as_projection_tuples!((T1, T2, T3, T4,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7, T8,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11,));
-impl_as_projection_tuples!((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12,));
 
 #[derive(PartialEq, Eq)]
 pub enum JoinStyle {
@@ -184,26 +133,26 @@ where
     }
 }
 
-pub struct IncompleteSelectJoin<Lhs, Rhs, const N: usize> {
-    select: Select<Lhs, N>,
+pub struct IncompleteSelectJoin<Lhs, Rhs, Proj> {
+    select: Select<Lhs, Proj>,
     right: Rhs,
     style: JoinStyle,
 }
 
-impl<Lhs, Rhs, const N: usize> IncompleteSelectJoin<Lhs, Rhs, N> {
-    pub fn on<On>(self, on: On) -> Select<Join<Lhs, Rhs, On>, N> {
+impl<Lhs, Rhs, Proj> IncompleteSelectJoin<Lhs, Rhs, Proj> {
+    pub fn on<On>(self, on: On) -> Select<Join<Lhs, Rhs, On>, Proj> {
         self.construct(JoinOn::Explicit(on))
     }
 
-    pub fn using<On>(self, columns: On) -> Select<Join<Lhs, Rhs, On>, N> {
+    pub fn using<On>(self, columns: On) -> Select<Join<Lhs, Rhs, On>, Proj> {
         self.construct(JoinOn::Using(columns))
     }
 
-    pub fn natural(self) -> Select<Join<Lhs, Rhs, ()>, N> {
+    pub fn natural(self) -> Select<Join<Lhs, Rhs, ()>, Proj> {
         self.construct(JoinOn::Natural)
     }
 
-    fn construct<On>(self, join_on: JoinOn<On>) -> Select<Join<Lhs, Rhs, On>, N> {
+    fn construct<On>(self, join_on: JoinOn<On>) -> Select<Join<Lhs, Rhs, On>, Proj> {
         Select {
             from: Join {
                 left: self.select.from,
