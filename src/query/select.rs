@@ -1,3 +1,5 @@
+use std::marker::Destruct;
+
 use crate::{
     expression::{Sql, SqlExpression},
     schema::{table_columns, Table},
@@ -72,17 +74,18 @@ macro_rules! impl_join {
 }
 
 impl<Source, const N: usize> Select<Source, N> {
-    // TODO: need destructors.
-    //pub const fn select<P>(self, projection: P) -> Select<Source, { P::LENGTH }>
-    //where
-    //    P: ~const AsProjection,
-    //{
-    //    Select {
-    //        from: self.from,
-    //        projections: projection.as_projection(),
-    //        limit: self.limit,
-    //    }
-    //}
+    pub const fn select<P>(self, projection: P) -> Select<Source, { P::LENGTH }>
+    where
+        P: ~const AsProjection + ~const Destruct,
+        Source: ~const Destruct,
+    {
+        Select {
+            from: self.from,
+            projections: projection.as_projection(),
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
 
     impl_join!(inner_join, Inner);
     impl_join!(left_join, Left);
