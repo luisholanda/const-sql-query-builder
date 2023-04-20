@@ -2,23 +2,24 @@ use core::{
     intrinsics::{const_allocate, const_deallocate, const_eval_select},
     ptr::{copy_nonoverlapping, slice_from_raw_parts_mut, write_bytes, NonNull},
 };
-use std::{
-    alloc::{handle_alloc_error, AllocError, Allocator, Layout, System},
-    mem::ManuallyDrop,
-};
-
-type ConstBox<T> = Box<T, ConstAlloc>;
+use std::alloc::{handle_alloc_error, AllocError, Allocator, Layout, System};
 
 pub(crate) struct ConstString {
-    buf: ConstBox<[u8]>,
+    buf: NonNull<[u8]>,
     size: usize,
     cap: usize,
 }
 
 impl const Default for ConstString {
     fn default() -> Self {
+        let Ok(layout) = Layout::array::<u8>(16) else {
+            panic!();
+        };
+        let Ok(ptr) = ConstAlloc.allocate(layout) else {
+            panic!();
+        };
         Self {
-            buf: <ConstBox<[u8; 16]>>::new_in([0; 16], ConstAlloc) as ConstBox<[u8]>,
+            buf: ptr,
             size: 0,
             cap: 16,
         }
@@ -46,13 +47,11 @@ impl ConstString {
 
     pub(crate) const fn leak(mut self) -> &'static str {
         self.shrink_to_size();
-        let slice = ConstBox::leak(self.buf);
-
-        unsafe { std::str::from_utf8_unchecked(slice) }
+        unsafe { std::str::from_utf8_unchecked(self.buf.as_ref()) }
     }
 
-    pub(crate) const fn as_str(&self) -> &'static str {
-        unsafe { std::str::from_utf8_unchecked(&*self.buf.as_ptr()) }
+    pub(crate) const fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(self.buf.as_ref()) }
     }
 
     const fn end(&mut self) -> *mut u8 {
@@ -80,14 +79,10 @@ impl ConstString {
                 .copy_to_nonoverlapping(new_ptr.as_ptr() as *mut u8, self.size);
 
             {
-                let mut new_box = Box::from_raw_in(new_ptr.as_ptr(), ConstAlloc);
-                std::mem::swap(&mut self.buf, &mut new_box);
-
-                let ptr = Box::into_raw_with_allocator(new_box).0 as *mut u8;
-                let ptr = NonNull::new_unchecked(ptr);
                 let layout =
                     Layout::from_size_align_unchecked(self.cap, std::mem::align_of::<u8>());
-                ConstAlloc.deallocate(ptr, layout);
+                ConstAlloc.deallocate(self.buf.cast(), layout);
+                self.buf = new_ptr;
             }
 
             self.cap = next_cap;
@@ -95,25 +90,16 @@ impl ConstString {
     }
 
     const fn shrink_to_size(&mut self) {
-        let new_ptr = unsafe {
-            let old_ptr = NonNull::new_unchecked(self.buf.as_mut_ptr());
-
+        self.buf = unsafe {
             let align = std::mem::align_of::<u8>();
             let old_layout = Layout::from_size_align_unchecked(self.cap, align);
             let new_layout = Layout::from_size_align_unchecked(self.size, align);
 
-            match ConstAlloc.shrink(old_ptr, old_layout, new_layout) {
+            match ConstAlloc.shrink(self.buf.cast(), old_layout, new_layout) {
                 Ok(m) => m,
                 Err(_) => handle_alloc_error(new_layout),
             }
         };
-
-        unsafe {
-            let mut new_box = Box::from_raw_in(new_ptr.as_ptr(), ConstAlloc);
-            std::mem::swap(&mut self.buf, &mut new_box);
-
-            let _ = ManuallyDrop::new(new_box);
-        }
     }
 }
 
@@ -149,6 +135,10 @@ const unsafe fn dealloc(ptr: NonNull<u8>, layout: Layout) {
 }
 
 const fn alloc_zeroed(layout: Layout) -> AllocResult {
+    fn rt(layout: Layout) -> AllocResult {
+        System.allocate_zeroed(layout)
+    }
+
     const fn ct(layout: Layout) -> AllocResult {
         unsafe {
             let ptr = const_allocate(layout.size(), layout.align());
@@ -159,7 +149,7 @@ const fn alloc_zeroed(layout: Layout) -> AllocResult {
         }
     }
 
-    unsafe { const_eval_select((layout,), ct, |l| System.allocate_zeroed(l)) }
+    unsafe { const_eval_select((layout,), ct, rt) }
 }
 
 const unsafe fn grow(ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout) -> AllocResult {
@@ -293,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_const_string() {
-        const TEST: &'static str = {
+        const TEST: &str = {
             let mut string = ConstString::default();
             string.push_str("testing a functio");
             string.push_ascii(b'n');

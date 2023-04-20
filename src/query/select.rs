@@ -37,13 +37,15 @@ where
     fn write_sql_expression(&self, sql: &mut Sql) {
         sql.push_str("SELECT ");
 
-        let mut projs = &self.projections;
+        let mut projs = &self.projections as &[Sql];
         while let Some((cur, rest)) = projs.split_first() {
             sql.push_sql(cur);
 
-            if rest.len() != 0 {
+            if rest.is_empty() {
                 sql.comma();
             }
+
+            projs = rest;
         }
 
         sql.push_str(" FROM ");
@@ -100,6 +102,7 @@ impl<Source, const N: usize> Select<Source, N> {
     }
 }
 
+#[const_trait]
 pub trait AsProjection {
     const LENGTH: usize;
 
@@ -165,7 +168,7 @@ where
             JoinStyle::Inner => sql.push_str(" INNER JOIN "),
             JoinStyle::Left => sql.push_str(" LEFT OUTER JOIN "),
             JoinStyle::Cross => sql.push_str(" CROSS JOIN "),
-        }
+        };
 
         self.right.write_sql_expression(sql);
     }

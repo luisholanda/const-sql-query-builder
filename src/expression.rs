@@ -2,6 +2,7 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 
 use crate::const_string::ConstString;
 
+#[const_trait]
 pub trait SqlExpression {
     fn write_sql_expression(&self, sql: &mut Sql);
 }
