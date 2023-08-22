@@ -5,6 +5,14 @@ use crate::const_string::ConstString;
 #[const_trait]
 pub trait SqlExpression {
     fn write_sql_expression(&self, sql: &mut Sql);
+
+    fn to_sql(&self) -> Sql {
+        let mut sql = Sql::default();
+
+        self.write_sql_expression(&mut sql);
+
+        sql
+    }
 }
 
 impl const SqlExpression for Sql {

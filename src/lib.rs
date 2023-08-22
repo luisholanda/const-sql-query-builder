@@ -35,6 +35,8 @@
     slice_ptr_get,
 )]
 
+pub(crate) mod const_alloc;
+pub(crate) mod const_vec;
 pub(crate) mod const_string;
 pub(crate) mod fmt;
 pub mod expression;
